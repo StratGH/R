@@ -1,0 +1,198 @@
+---
+title: "Упражнение 3"
+author: ""
+date: '25 февраля 2017 г '
+output: html_document
+---
+
+Цель: исследовать набор данных `wages.ru` с помощью линейной регрессионной модели. Задействовав все возможные регрессоры, сделать вывод о пригодности модели для прогноза. Сравнить с методом k ближайших соседей по MSE на тестовой выборке.    
+
+```{r Данные и пакеты, include = F}
+# загрузка пакетов
+library('GGally')
+library('lmtest')
+library('FNN')
+
+# константы
+my.seed <- 12345
+train.percent <- 0.85
+
+# загрузка данных
+library('ISLR') # загружаем пакет
+data(Carseats) # открываем данные
+?Carseats
+
+wages.ru <- Carseats
+#wages.ru$US <- as.numeric(wages.ru$US)
+#wages.ru$ShelveLoc <- as.numeric(wages.ru$ShelveLoc)
+
+# преобразуем категориальные переменные в факторы
+##wages.ru <- read.csv(fileURL, row.names = 1, sep = ';', as.is = T)
+#wages.ru$US <- as.factor(wages.ru$US)
+#wages.ru$ShelveLoc <- as.factor(wages.ru$ShelveLoc)
+#wages.ru$individual <- seq_along(wages.ru$Sales)
+# обучающая выборка
+set.seed(my.seed)
+inTrain <- sample(seq_along(wages.ru$Sales), 
+                  nrow(wages.ru) * train.percent)
+df.train <- wages.ru[inTrain, c("Price", "Advertising", "US", "ShelveLoc", "Sales")]
+df.test <- wages.ru[-inTrain, c("Price", "Advertising", "US", "ShelveLoc")]
+```
+
+## Описание переменных  
+
+Набор данных `Carseats` содержит переменные:  
+
+- `Sales` – Объем продаж (в тысячах) в каждом месте;  
+- `Price` – Расходы компании за автокресла на каждом участке;  
+- `Advertising` – Рекламный бюджет для компании в каждом месте (в тысячах долларов);  
+- `US` – Фактор с уровнями «No» и «Yes», чтобы указать, находится ли магазин в США или нет;
+- `ShelveLoc` – Фактор с уровнями «Bad», «Good» и «Medium», указывающий на качество места для стеллажа для автомобильных сидений на каждом участке:  
+
+Размерность обучающей выборки: $n = `r dim(df.train)[1]`$ строк, $p = `r dim(df.train)[2] - 1`$ объясняющих переменных. Зависимая переменная -- `Sales`.  
+
+```{r Описание данных, echo = F, message = F, warning = F}
+# описательные статистики по переменным
+summary(df.train)
+
+# совместный график разброса переменных
+ggpairs(df.train)
+
+# цвета по фактору US
+ggpairs(df.train[, c('Price', 'US', 'Sales')], 
+        mapping = ggplot2::aes(color = US))
+
+# цвета по фактору ShelveLoc
+ggpairs(df.train[, c('Price', 'ShelveLoc', 'Sales')], 
+        mapping = ggplot2::aes(color = ShelveLoc))
+
+# цвета по фактору US
+ggpairs(df.train[, c('Advertising', 'US', 'Sales')], 
+        mapping = ggplot2::aes(color = US))
+
+# цвета по фактору ShelveLoc
+ggpairs(df.train[, c('Advertising', 'ShelveLoc', 'Sales')], 
+        mapping = ggplot2::aes(color = ShelveLoc))
+
+```
+
+## Модели  
+
+```{r echo = F, warning = F, error = F}
+
+model.1 <- lm(Sales ~ . + exper:educ + exper:forlang + exper:male,
+              data = df.train)
+summary(model.1)
+
+```
+
+Совместное влияние `exper:educ` исключаем, т.к. параметры незначимы и недостаточно наблюдений для оценки одного из них.
+
+```{r echo = F, warning = F, error = F}
+
+model.2 <- lm(salary ~ . + exper:forlang + exper:male,
+              data = df.train)
+summary(model.2)
+
+```
+
+Взаимодействие `male1:exper` также исключаем.
+
+```{r echo = F, warning = F, error = F}
+
+model.3 <- lm(salary ~ . + exper:forlang,
+              data = df.train)
+summary(model.3)
+
+```
+
+Коэффициент при `forlang1` наименее значимый, и его знак не соответствует здравому смыслу.
+
+```{r echo = F, warning = F, error = F}
+
+model.4 <- lm(salary ~ male + educ + exper,
+              data = df.train)
+summary(model.4)
+
+```
+
+В модели практичски нет значимых объясняющих переменных. Вероятно, это из-за того, что подвыборки по уровням фактора `educ` очень маленькие. Попробуем сделать `educ` дискретной количественной переменной.
+
+```{r echo = F, warning = F, error = F}
+df.train$educ <- as.numeric(df.train$educ)
+df.test$educ <- as.numeric(df.test$educ)
+
+model.6 <- lm(salary ~ .,
+              data = df.train)
+summary(model.6)
+
+```
+
+Эта модель лучше, но по характеристикам качества очень слабая. Пробуем добавить взаимодействие `exper:male`.  
+
+```{r echo = F, warning = F, error = F}
+df.train$educ <- as.numeric(df.train$educ)
+
+model.7 <- lm(salary ~ . + exper:male,
+              data = df.train)
+summary(model.7)
+
+```
+
+Очевидно, стоит остановиться на модели без взаимодействий. Проверим её остатки. 
+
+# Проверка остатков  
+
+```{r echo = F, warning = F, error = F}
+# тест Бройша-Пагана
+bptest(model.6)
+
+# статистика Дарбина-Уотсона
+dwtest(model.6)
+
+# графики остатков
+par(mar = c(4.5, 4.5, 2, 1))
+par(mfrow = c(1, 3))
+plot(model.7, 1)
+plot(model.7, 4)
+plot(model.7, 5)
+par(mfrow = c(1, 1))
+
+```
+
+# Сравнение с kNN
+
+```{r echo = F}
+# фактические значения y на тестовой выборке
+y.fact <- wages.ru[-inTrain, 1]
+y.model.lm <- predict(model.6, df.test)
+MSE.lm <- sum((y.model.lm - y.fact)^2) / length(y.model.lm)
+
+# kNN требует на вход только числовые переменные
+df.train.num <- as.data.frame(apply(df.train, 2, as.numeric))
+df.test.num <- as.data.frame(apply(df.test, 2, as.numeric))
+
+for (i in 2:50){
+    model.knn <- knn.reg(train = df.train.num[, !(colnames(df.train.num) %in% 'salary')], 
+                     y = df.train.num[, 'salary'], 
+                     test = df.test.num, k = i)
+    y.model.knn <- model.knn$pred
+    if (i == 2){
+        MSE.knn <- sum((y.model.knn - y.fact)^2) / length(y.model.knn)
+    } else {
+        MSE.knn <- c(MSE.knn, 
+                     sum((y.model.knn - y.fact)^2) / length(y.model.knn))
+    }
+}
+
+# график
+par(mar = c(4.5, 4.5, 1, 1))
+plot(2:50, MSE.knn, type = 'b', col = 'darkgreen',
+     xlab = 'значение k', ylab = 'MSE на тестовой выборке')
+lines(2:50, rep(MSE.lm, 49), lwd = 2, col = grey(0.2), lty = 2)
+legend('bottomright', lty = c(1, 2), pch = c(1, NA), 
+       col = c('darkgreen', grey(0.2)), 
+       legend = c('k ближайших соседа', 'регрессия (все факторы)'), 
+       lwd = rep(2, 2))
+```
+
