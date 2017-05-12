@@ -1,0 +1,87 @@
+---
+title: "lab_09"
+author: "Zhuravlev"
+date: '12 мая 2017 г '
+output: html_document
+---
+
+```{r Данные и пакеты, echo=T, warning=FALSE}
+# загрузка пакетов
+library('e1071')     # SVM
+library('ROCR')      # ROC-кривые
+library('ISLR')      # данные по экспрессии генов
+
+```
+
+```{r Машина опорных векторов с полиномиальным ядром второй степени, echo=T }
+
+au <- Auto[,c('mpg', 'displacement', 'horsepower')]
+high.mpg <- c(rep('Yes', nrow(au)))
+high.mpg[au['mpg']<23] <- 'No'
+au <- data.frame(au[,-1],high.mpg)
+
+# обучающая выборка
+my.seed <- 1
+n <- nrow(au)
+train.percent <- 0.5
+set.seed(my.seed)
+inTrain <- sample(n, n * train.percent)
+
+
+plot(x=au[inTrain, ]$horsepower, y=au[inTrain, ]$displacement, col = au[inTrain, ]$high.mpg, pch = 19)
+
+
+# SVM с полиномиальным ядром и маленьким cost
+svmfit <- svm(high.mpg ~ ., data = au[inTrain, ], kernel = "polynomial", 
+              degree = 2, cost = 1)
+plot(svmfit, au[inTrain, ])
+summary(svmfit)
+
+# SVM с полиномиальным ядром и большим cost
+svmfit <- svm(high.mpg ~ ., data = au[inTrain, ], kernel = "polynomial", 
+              degree = 2, cost = 1e5)
+plot(svmfit, au[inTrain, ])
+summary(svmfit)
+
+# перекрёстная проверка
+set.seed(1)
+tune.out <- tune(svm, high.mpg ~ ., data = au[inTrain, ], kernel = "polynomial", 
+                 ranges = list(cost = c(0.1, 1, 10, 100, 1000, 10000),
+                               degree = 2))
+summary(tune.out)
+
+# матрица неточностей для прогноза по лучшей модели
+table(true = au[-inTrain, "high.mpg"], 
+      pred = predict(tune.out$best.model, newdata = au[-inTrain, ]))
+
+```
+Оптимальный параметр cost=100.
+Эта машина опорных векторов неверно классифицирует 36% контрольных наблюдений.
+
+
+```{r ROC-кривые, echo=T }
+# функция построения ROC-кривой: pred -- прогноз, truth -- факт
+rocplot <- function(pred, truth, ...){
+    predob = prediction(pred, truth)
+    perf = performance(predob, "tpr", "fpr")
+    plot(perf,...)}
+
+# оптимальная модель
+svmfit.opt <- svm(high.mpg ~ ., data = au[inTrain, ], 
+                  kernel = "polynomial", degree = 2, cost = 100, decision.values = T)
+# количественные модельные значения, на основе которых присваивается класс
+fitted <- attributes(predict(svmfit.opt, au[inTrain, ],
+                             decision.values = TRUE))$decision.values
+
+# график для обучающей выборки
+par(mfrow = c(1, 2))
+rocplot(fitted, au[inTrain, "high.mpg"], main = "Training Data")
+
+
+# график для тестовой выборки
+fitted <- attributes(predict(svmfit.opt, au[-inTrain, ], 
+                             decision.values = T))$decision.values
+rocplot(fitted, au[-inTrain, "high.mpg"], main = "Test Data")
+
+
+```
